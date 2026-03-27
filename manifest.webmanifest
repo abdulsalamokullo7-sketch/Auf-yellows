@@ -1,0 +1,19 @@
+{
+  "name": "AUF'S YELLOWS",
+  "short_name": "AUF Yellows",
+  "description": "Banana bunch tracking, sales, and profit — works offline",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#FFFFFF",
+  "theme_color": "#1B5E20",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5" />
+  <meta name="description" content="AUF'S YELLOWS — Banana bunch tracking, sales, and profit" />
+  <meta name="theme-color" content="#1B5E20" />
+  <meta name="theme-color" content="#0d1f0d" media="(prefers-color-scheme: dark)" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>AUF'S YELLOWS — Banana Business</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon.svg" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- PIN lock overlay -->
+  <div id="pin-overlay" class="pin-overlay">
+    <div class="pin-card card">
+      <div class="pin-header">
+        <span class="pin-emoji" aria-hidden="true">🍌</span>
+        <h2>AUF'S YELLOWS</h2>
+        <p class="pin-sub" id="pin-sub-text">Enter PIN to continue</p>
+      </div>
+
+      <!-- Step 1: Create PIN (first time only) -->
+      <div id="pin-setup" hidden>
+        <label class="field-label" for="pin-new">Create a PIN (4–8 digits)</label>
+        <input type="password" id="pin-new" class="input pin-input" inputmode="numeric" minlength="4" maxlength="8" autocomplete="new-password" placeholder="New PIN" />
+        <label class="field-label" for="pin-confirm" style="margin-top:0.75rem;">Confirm PIN</label>
+        <input type="password" id="pin-confirm" class="input pin-input" inputmode="numeric" minlength="4" maxlength="8" autocomplete="new-password" placeholder="Confirm PIN" />
+        <p id="pin-setup-error" class="pin-error" role="alert" hidden></p>
+        <button type="button" class="btn btn-primary btn-block" id="pin-setup-submit" style="margin-top:0.75rem;">Set PIN &amp; continue</button>
+      </div>
+
+      <!-- Step 2: Unlock (returning user) -->
+      <div id="pin-unlock" hidden>
+        <label class="sr-only" for="pin-input">PIN</label>
+        <input type="password" id="pin-input" class="input pin-input" inputmode="numeric" maxlength="8" autocomplete="current-password" placeholder="••••" />
+        <p id="pin-error" class="pin-error" role="alert" hidden></p>
+        <button type="button" class="btn btn-primary btn-block" id="pin-submit">Unlock</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="app-shell" class="app-shell" hidden>
+    <header class="site-header">
+      <div class="header-inner">
+        <div class="brand">
+          <span class="brand-emoji" aria-hidden="true">🍌</span>
+          <div>
+            <h1 class="site-title">AUF'S YELLOWS</h1>
+            <p class="site-tagline">Every banana accounted for</p>
+          </div>
+        </div>
+        <div class="header-actions">
+          <button type="button" class="btn btn-ghost btn-icon" id="btn-dark-mode" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
+          <button type="button" class="btn btn-ghost btn-sm" id="btn-reset-data">Reset data</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="main">
+      <!-- 1. Dashboard -->
+      <section class="section" id="section-dashboard" aria-labelledby="dash-heading">
+        <h2 id="dash-heading" class="section-title">Dashboard</h2>
+        <div class="dashboard-grid" id="dashboard-cards">
+          <!-- Filled by app.js -->
+        </div>
+      </section>
+
+      <!-- 3. Bunch list -->
+      <section class="section" id="section-bunches" aria-labelledby="bunches-heading">
+        <h2 id="bunches-heading" class="section-title">Your bunches</h2>
+        <div id="bunch-list" class="bunch-list">
+          <!-- Cards -->
+        </div>
+        <p id="bunch-empty" class="empty-state" hidden>No bunches yet. Tap <strong>+ Add</strong> at the bottom to get started.</p>
+      </section>
+
+      <!-- 4. Bunch details (inline view, not a separate file) -->
+      <section class="section section-details" id="section-details" hidden aria-labelledby="details-heading">
+        <div class="details-toolbar">
+          <button type="button" class="back-btn" id="btn-back-list">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+          Back to bunches
+        </button>
+        </div>
+        <div id="details-content" class="details-content">
+          <!-- Injected -->
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom navigation -->
+    <nav class="bottom-nav" id="bottom-nav" aria-label="Main navigation">
+      <button type="button" class="nav-tab is-active" id="nav-tab-home" aria-label="Home">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+        </svg>
+        <span class="nav-label">Home</span>
+      </button>
+      <button type="button" class="nav-tab" id="nav-tab-bunches" aria-label="Bunches">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/>
+          <circle cx="3" cy="6" r="1.2" fill="currentColor" stroke="none"/><circle cx="3" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="3" cy="18" r="1.2" fill="currentColor" stroke="none"/>
+        </svg>
+        <span class="nav-label">Bunches</span>
+      </button>
+      <button type="button" class="nav-tab nav-tab-add" id="nav-tab-add" aria-label="Add bunch">
+        <span class="nav-add-bubble" aria-hidden="true">
+          <svg class="nav-icon-add" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+        </span>
+        <span class="nav-label">Add</span>
+      </button>
+    </nav>
+
+    <!-- Toast / alerts -->
+    <div id="toast-host" class="toast-host" aria-live="polite"></div>
+
+    <!-- Modal: Add Bunch -->
+    <div class="modal-backdrop" id="modal-add-bunch" role="dialog" aria-modal="true" aria-labelledby="modal-add-title" hidden>
+      <div class="modal card">
+        <div class="modal-head">
+          <h2 id="modal-add-title">Add bunch</h2>
+          <button type="button" class="btn btn-icon btn-close" id="modal-add-close" aria-label="Close">×</button>
+        </div>
+        <form id="form-add-bunch" class="form">
+          <label class="field">
+            <span class="field-label">Date</span>
+            <input type="date" name="date" id="add-date" class="input" required />
+          </label>
+          <label class="field">
+            <span class="field-label">Bunch name</span>
+            <input type="text" name="bunchName" id="add-name" class="input" maxlength="80" placeholder="e.g. Big bunch, Small, Market A" />
+          </label>
+          <label class="field">
+            <span class="field-label">Capital per bunch — purchase (UGX)</span>
+            <input type="number" name="cost" id="add-cost" class="input" min="0" step="1" required placeholder="e.g. 50000" />
+          </label>
+          <label class="field">
+            <span class="field-label">Paid worker per bunch (UGX)</span>
+            <input type="number" name="paidWorker" id="add-worker" class="input" min="0" step="1" value="0" />
+          </label>
+          <label class="field">
+            <span class="field-label">Transport per bunch (UGX)</span>
+            <input type="number" name="transport" id="add-transport" class="input" min="0" step="1" value="0" />
+          </label>
+          <label class="field">
+            <span class="field-label">Number of bunches</span>
+            <input type="number" name="count" id="add-count" class="input" min="1" step="1" value="1" required />
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="btn-cancel-add">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save bunches</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal: Edit capital, worker, transport -->
+    <div class="modal-backdrop" id="modal-expenses" role="dialog" aria-modal="true" aria-labelledby="modal-expenses-title" hidden>
+      <div class="modal card">
+        <div class="modal-head">
+          <h2 id="modal-expenses-title">Capital &amp; expenses</h2>
+          <button type="button" class="btn btn-icon btn-close" id="modal-expenses-close" aria-label="Close">×</button>
+        </div>
+        <form id="form-expenses" class="form">
+          <input type="hidden" id="expenses-bunch-id" />
+          <label class="field">
+            <span class="field-label">Bunch name</span>
+            <input type="text" id="expenses-name" class="input" maxlength="80" placeholder="Name shown on home and details" />
+          </label>
+          <label class="field">
+            <span class="field-label">Capital — purchase (UGX)</span>
+            <input type="number" id="expenses-capital" class="input" min="0" step="1" required />
+          </label>
+          <label class="field">
+            <span class="field-label">Paid worker (UGX)</span>
+            <input type="number" id="expenses-worker" class="input" min="0" step="1" value="0" />
+          </label>
+          <label class="field">
+            <span class="field-label">Transport (UGX)</span>
+            <input type="number" id="expenses-transport" class="input" min="0" step="1" value="0" />
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="btn-cancel-expenses">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal: Edit cluster info -->
+    <div class="modal-backdrop" id="modal-cluster" role="dialog" aria-modal="true" aria-labelledby="modal-cluster-title" hidden>
+      <div class="modal card">
+        <div class="modal-head">
+          <h2 id="modal-cluster-title">Edit cluster info</h2>
+          <button type="button" class="btn btn-icon btn-close" id="modal-cluster-close" aria-label="Close">×</button>
+        </div>
+        <form id="form-cluster" class="form">
+          <input type="hidden" name="bunchId" id="cluster-bunch-id" />
+          <label class="field">
+            <span class="field-label">Total clusters in this bunch</span>
+            <input type="number" name="clustersTotal" id="cluster-total" class="input" min="0" step="1" required />
+          </label>
+          <p class="form-hint" id="cluster-tiers-hint">Allocate clusters by price. Counts must add up to the total above.</p>
+          <div id="cluster-tiers-rows" class="cluster-tiers" aria-label="Clusters by price"></div>
+          <button type="button" class="btn btn-secondary btn-sm btn-add-tier" id="btn-add-tier">+ Add price row</button>
+          <p class="form-hint" id="cluster-preview"></p>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="btn-cancel-cluster">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal: Add sale — pick quantities per price tier, then confirm -->
+    <div class="modal-backdrop" id="modal-sale" role="dialog" aria-modal="true" aria-labelledby="modal-sale-title" hidden>
+      <div class="modal card">
+        <div class="modal-head">
+          <h2 id="modal-sale-title">Record sale</h2>
+          <button type="button" class="btn btn-icon btn-close" id="modal-sale-close" aria-label="Close">×</button>
+        </div>
+        <form id="form-sale" class="form">
+          <input type="hidden" id="sale-bunch-id" />
+          <p class="form-hint" id="sale-bunch-label"></p>
+          <p class="form-hint" id="sale-instructions">Enter how many to sell at each price, or tap +1. Then confirm.</p>
+          <div id="sale-tier-rows" class="sale-tier-rows" aria-label="Clusters by price"></div>
+          <p class="form-hint sale-summary" id="sale-summary"></p>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="btn-cancel-sale">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="btn-confirm-sale">Confirm sale</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal: Spoilage -->
+    <div class="modal-backdrop" id="modal-spoil" role="dialog" aria-modal="true" aria-labelledby="modal-spoil-title" hidden>
+      <div class="modal card">
+        <div class="modal-head">
+          <h2 id="modal-spoil-title">Record spoilage</h2>
+          <button type="button" class="btn btn-icon btn-close" id="modal-spoil-close" aria-label="Close">×</button>
+        </div>
+        <form id="form-spoil" class="form">
+          <input type="hidden" name="bunchId" id="spoil-bunch-id" />
+          <label class="field">
+            <span class="field-label">Spoiled clusters</span>
+            <input type="number" name="qty" id="spoil-qty" class="input" min="1" step="1" required />
+          </label>
+          <label class="field">
+            <span class="field-label">Reason (optional)</span>
+            <input type="text" name="reason" id="spoil-reason" class="input" maxlength="200" placeholder="e.g. Heat damage" />
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="btn-cancel-spoil">Cancel</button>
+            <button type="submit" class="btn btn-primary">Add spoilage</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Reset confirmation -->
+    <div class="modal-backdrop" id="modal-reset" role="dialog" aria-modal="true" aria-labelledby="modal-reset-title" hidden>
+      <div class="modal card modal-sm">
+        <div class="modal-head">
+          <h2 id="modal-reset-title">Reset all data?</h2>
+        </div>
+        <p class="reset-copy">This removes every bunch and cannot be undone.</p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btn-reset-cancel">Cancel</button>
+          <button type="button" class="btn btn-danger" id="btn-reset-confirm">Reset everything</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
