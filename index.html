@@ -80,6 +80,32 @@
         <p id="bunch-empty" class="empty-state" hidden>No bunches yet. Tap <strong>+ Add</strong> at the bottom to get started.</p>
       </section>
 
+      <!-- 5. Finance & client loans -->
+      <section class="section" id="section-finance" hidden aria-labelledby="finance-heading">
+        <div class="finance-header">
+          <h2 id="finance-heading" class="section-title" style="margin:0;">Finance</h2>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-open-add-loan">+ Add loan</button>
+        </div>
+
+        <!-- Guidance card -->
+        <div class="finance-guide card">
+          <p class="finance-guide-title">Client loans guide</p>
+          <ul class="finance-guide-list">
+            <li>Money lent out reduces cash available for buying new bunches</li>
+            <li>Record every payment immediately to keep balances accurate</li>
+            <li>Set due dates so you know exactly when to follow up</li>
+            <li><strong>Outstanding</strong> = money still not back in your pocket</li>
+          </ul>
+        </div>
+
+        <!-- Summary metrics -->
+        <div id="finance-summary" class="finance-summary"><!-- filled by JS --></div>
+
+        <!-- Loan list -->
+        <div id="loan-list" class="loan-list"></div>
+        <p id="loan-empty" class="empty-state" hidden>No loans recorded yet.<br/>Tap <strong>+ Add loan</strong> above to start tracking.</p>
+      </section>
+
       <!-- 4. Bunch details (inline view, not a separate file) -->
       <section class="section section-details" id="section-details" hidden aria-labelledby="details-heading">
         <div class="details-toolbar">
@@ -108,6 +134,13 @@
           <circle cx="3" cy="6" r="1.2" fill="currentColor" stroke="none"/><circle cx="3" cy="12" r="1.2" fill="currentColor" stroke="none"/><circle cx="3" cy="18" r="1.2" fill="currentColor" stroke="none"/>
         </svg>
         <span class="nav-label">Bunches</span>
+      </button>
+      <button type="button" class="nav-tab" id="nav-tab-finance" aria-label="Finance">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="12" y1="1" x2="12" y2="23"/>
+          <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+        </svg>
+        <span class="nav-label">Finance</span>
       </button>
       <button type="button" class="nav-tab nav-tab-add" id="nav-tab-add" aria-label="Add bunch">
         <span class="nav-add-bubble" aria-hidden="true">
@@ -263,6 +296,79 @@
             <button type="submit" class="btn btn-primary">Add spoilage</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- Modal: Add / Edit loan -->
+    <div class="modal-backdrop" id="modal-loan" role="dialog" aria-modal="true" aria-labelledby="modal-loan-title" hidden>
+      <div class="modal card">
+        <div class="modal-head">
+          <h2 id="modal-loan-title">Add loan</h2>
+          <button type="button" class="btn btn-icon btn-close" id="modal-loan-close" aria-label="Close">×</button>
+        </div>
+        <form id="form-loan" class="form">
+          <input type="hidden" id="loan-edit-id" />
+          <label class="field">
+            <span class="field-label">Client name</span>
+            <input type="text" id="loan-client" class="input" maxlength="100" placeholder="e.g. John Doe" required />
+          </label>
+          <label class="field">
+            <span class="field-label">Loan amount (UGX)</span>
+            <input type="number" id="loan-amount" class="input" min="1" step="1" required placeholder="e.g. 50000" />
+          </label>
+          <label class="field">
+            <span class="field-label">Date given</span>
+            <input type="date" id="loan-date" class="input" required />
+          </label>
+          <label class="field">
+            <span class="field-label">Due date (optional)</span>
+            <input type="date" id="loan-due" class="input" />
+          </label>
+          <label class="field">
+            <span class="field-label">Note (optional)</span>
+            <input type="text" id="loan-note" class="input" maxlength="200" placeholder="e.g. For market supplies" />
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="btn-cancel-loan">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="btn-save-loan">Save loan</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal: Record loan payment -->
+    <div class="modal-backdrop" id="modal-payment" role="dialog" aria-modal="true" aria-labelledby="modal-payment-title" hidden>
+      <div class="modal card modal-sm">
+        <div class="modal-head">
+          <h2 id="modal-payment-title">Record payment</h2>
+          <button type="button" class="btn btn-icon btn-close" id="modal-payment-close" aria-label="Close">×</button>
+        </div>
+        <form id="form-payment" class="form">
+          <input type="hidden" id="payment-loan-id" />
+          <p class="form-hint" id="payment-loan-info"></p>
+          <label class="field">
+            <span class="field-label">Amount received (UGX)</span>
+            <input type="number" id="payment-amount" class="input" min="1" step="1" required />
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="btn-cancel-payment">Cancel</button>
+            <button type="submit" class="btn btn-primary">Confirm payment</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Modal: Delete loan confirmation -->
+    <div class="modal-backdrop" id="modal-delete-loan" role="dialog" aria-modal="true" aria-labelledby="modal-del-loan-title" hidden>
+      <div class="modal card modal-sm">
+        <div class="modal-head">
+          <h2 id="modal-del-loan-title">Delete loan?</h2>
+        </div>
+        <p class="reset-copy" id="delete-loan-msg">This cannot be undone.</p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-secondary" id="btn-delete-loan-cancel">Cancel</button>
+          <button type="button" class="btn btn-danger" id="btn-delete-loan-confirm">Delete</button>
+        </div>
       </div>
     </div>
 

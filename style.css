@@ -1317,3 +1317,221 @@ body.dark .bottom-nav {
     transform: translateY(0);
   }
 }
+
+/* ── Finance section ────────────────────────────────── */
+.finance-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.85rem;
+}
+
+/* Guidance card */
+.finance-guide {
+  padding: 1rem 1.15rem;
+  margin-bottom: 0.85rem;
+  background: linear-gradient(135deg, rgba(27, 94, 32, 0.06) 0%, rgba(255, 213, 79, 0.12) 100%);
+  border-color: rgba(27, 94, 32, 0.18);
+}
+
+.finance-guide-title {
+  margin: 0 0 0.55rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--green-deep);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.finance-guide-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.finance-guide-list li {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+/* Summary row: 3 metric chips */
+.finance-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.65rem;
+  margin-bottom: 1rem;
+}
+
+.fin-metric {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 0.5rem;
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+}
+
+.fin-metric-label {
+  display: block;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  font-weight: 700;
+  margin-bottom: 0.3rem;
+}
+
+.fin-metric-val {
+  display: block;
+  font-size: clamp(0.82rem, 3vw, 1rem);
+  font-weight: 800;
+  line-height: 1.2;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.fin-metric-val.profit { color: var(--profit); }
+.fin-metric-val.loss   { color: var(--loss); }
+
+/* ── Loan list & cards ──────────────────────────────── */
+.loan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.loan-card {
+  padding: 1rem 1.1rem;
+}
+
+/* Loan card header: name + status badge */
+.lc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.lc-client {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.lc-date {
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* Status chip */
+.lc-status {
+  flex-shrink: 0;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.lc-status.outstanding { background: rgba(198, 40, 40, 0.1);  color: var(--loss); }
+.lc-status.partial     { background: rgba(230, 81, 0, 0.12);  color: #e65100; }
+.lc-status.paid        { background: rgba(46, 125, 50, 0.12); color: var(--profit); }
+
+/* 3-col amounts row */
+.lc-amounts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: rgba(27, 94, 32, 0.05);
+  border-radius: var(--radius);
+  padding: 0.6rem 0.25rem;
+  margin-bottom: 0.6rem;
+  text-align: center;
+}
+
+body.dark .lc-amounts {
+  background: rgba(165, 214, 167, 0.07);
+}
+
+.lc-amount-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.lc-amount-item + .lc-amount-item {
+  border-left: 1px solid var(--border);
+}
+
+.lca-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.lca-value {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.lca-value.paid    { color: var(--profit); }
+.lca-value.balance { color: var(--loss); }
+
+/* Payment progress bar */
+.lc-progress {
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+  margin-bottom: 0.6rem;
+}
+
+.lc-progress-fill {
+  height: 100%;
+  background: var(--profit);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+/* Due date line */
+.lc-due {
+  margin: 0 0 0.55rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.lc-due.overdue {
+  color: var(--loss);
+  font-weight: 700;
+}
+
+/* Note */
+.lc-note {
+  margin: 0 0 0.55rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Loan action buttons */
+.lc-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.lc-actions .btn {
+  flex: 1;
+  min-width: 80px;
+}

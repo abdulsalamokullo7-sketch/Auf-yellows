@@ -36,8 +36,8 @@
    * @property {SpoilLine[]} spoilageRecords
    */
 
-  /** @type {{ bunches: Bunch[] }} */
-  let state = { bunches: [] };
+  /** @type {{ bunches: Bunch[], loans: Loan[] }} */
+  let state = { bunches: [], loans: [] };
 
   /** App event listeners attached once after PIN unlock */
   let appInitialized = false;
@@ -84,7 +84,33 @@
     bottomNav: document.getElementById('bottom-nav'),
     navTabHome: document.getElementById('nav-tab-home'),
     navTabBunches: document.getElementById('nav-tab-bunches'),
+    navTabFinance: document.getElementById('nav-tab-finance'),
     navTabAdd: document.getElementById('nav-tab-add'),
+    sectionFinance: document.getElementById('section-finance'),
+    financeSummary: document.getElementById('finance-summary'),
+    loanList: document.getElementById('loan-list'),
+    loanEmpty: document.getElementById('loan-empty'),
+    btnOpenAddLoan: document.getElementById('btn-open-add-loan'),
+    modalLoan: document.getElementById('modal-loan'),
+    formLoan: document.getElementById('form-loan'),
+    loanEditId: document.getElementById('loan-edit-id'),
+    loanClient: document.getElementById('loan-client'),
+    loanAmount: document.getElementById('loan-amount'),
+    loanDate: document.getElementById('loan-date'),
+    loanDue: document.getElementById('loan-due'),
+    loanNote: document.getElementById('loan-note'),
+    modalLoanClose: document.getElementById('modal-loan-close'),
+    btnCancelLoan: document.getElementById('btn-cancel-loan'),
+    modalPayment: document.getElementById('modal-payment'),
+    formPayment: document.getElementById('form-payment'),
+    paymentLoanId: document.getElementById('payment-loan-id'),
+    paymentLoanInfo: document.getElementById('payment-loan-info'),
+    paymentAmount: document.getElementById('payment-amount'),
+    modalPaymentClose: document.getElementById('modal-payment-close'),
+    btnCancelPayment: document.getElementById('btn-cancel-payment'),
+    modalDeleteLoan: document.getElementById('modal-delete-loan'),
+    btnDeleteLoanCancel: document.getElementById('btn-delete-loan-cancel'),
+    btnDeleteLoanConfirm: document.getElementById('btn-delete-loan-confirm'),
     modalSale: document.getElementById('modal-sale'),
     formSale: document.getElementById('form-sale'),
     saleBunchId: document.getElementById('sale-bunch-id'),
@@ -107,6 +133,8 @@
 
   /** Current bunch id when viewing details (string | null) */
   let activeDetailId = null;
+  /** Loan id staged for delete confirmation (string | null) */
+  let loanToDeleteId = null;
 
   // --- Persistence (localStorage = on-device, survives refresh & power-off unless user clears site data) ---
   function parseStateFromRaw(raw) {
@@ -127,7 +155,17 @@
         /* skip one bad record; keep the rest */
       }
     }
-    return { bunches };
+    const loans = [];
+    if (Array.isArray(parsed.loans)) {
+      for (let i = 0; i < parsed.loans.length; i++) {
+        try {
+          loans.push(normalizeLoan(parsed.loans[i]));
+        } catch {
+          /* skip bad loan record */
+        }
+      }
+    }
+    return { bunches, loans };
   }
 
   function loadState() {
@@ -261,6 +299,55 @@
       sales,
       spoilageRecords,
     };
+  }
+
+  // --- Loans ---
+  /**
+   * @typedef {Object} Loan
+   * @property {string} id
+   * @property {string} clientName
+   * @property {number} amount      total lent (UGX)
+   * @property {number} amountPaid  cumulative paid back
+   * @property {string} date        ISO date given
+   * @property {string} dueDate     ISO due date or ''
+   * @property {string} note
+   */
+
+  function normalizeLoan(l) {
+    return {
+      id: String(l.id || generateId()),
+      clientName: String(l.clientName ?? '').trim().slice(0, 100),
+      amount: Math.max(0, num(l.amount)),
+      amountPaid: Math.max(0, num(l.amountPaid)),
+      date: typeof l.date === 'string' && l.date ? l.date : todayISO(),
+      dueDate: typeof l.dueDate === 'string' ? l.dueDate : '',
+      note: String(l.note ?? '').trim().slice(0, 200),
+    };
+  }
+
+  /** 'outstanding' | 'partial' | 'paid' */
+  function loanStatus(l) {
+    if (l.amount > 0 && l.amountPaid >= l.amount) return 'paid';
+    if (l.amountPaid > 0) return 'partial';
+    return 'outstanding';
+  }
+
+  function loanBalance(l) {
+    return Math.max(0, l.amount - l.amountPaid);
+  }
+
+  function isOverdue(l) {
+    if (!l.dueDate) return false;
+    if (loanStatus(l) === 'paid') return false;
+    return l.dueDate < todayISO();
+  }
+
+  function computeFinance() {
+    const totalLent      = state.loans.reduce((a, l) => a + l.amount, 0);
+    const totalRecovered = state.loans.reduce((a, l) => a + l.amountPaid, 0);
+    const outstanding    = Math.max(0, totalLent - totalRecovered);
+    const overdueCount   = state.loans.filter(isOverdue).length;
+    return { totalLent, totalRecovered, outstanding, overdueCount };
   }
 
   /** Total money in per bunch (capital + worker + transport) */
@@ -555,6 +642,7 @@
     const anyOpen = [
       el.modalAddBunch, el.modalCluster, el.modalSale,
       el.modalSpoil, el.modalReset, el.modalExpenses,
+      el.modalLoan, el.modalPayment, el.modalDeleteLoan,
     ].some((m) => m && !m.hidden);
     if (!anyOpen) {
       document.documentElement.style.overflow = '';
@@ -570,7 +658,10 @@
       el.modalSpoil,
       el.modalReset,
       el.modalExpenses,
-    ].forEach(closeModal);
+      el.modalLoan,
+      el.modalPayment,
+      el.modalDeleteLoan,
+    ].forEach((m) => m && closeModal(m));
   }
 
   // --- CRUD ---
@@ -698,6 +789,54 @@
     toast('Spoilage added');
   }
 
+  // --- Loan CRUD ---
+  function addLoan(clientName, amount, date, dueDate, note) {
+    if (!String(clientName).trim()) { toast('Enter a client name.'); return; }
+    const loan = normalizeLoan({ clientName, amount, date, dueDate, note, amountPaid: 0 });
+    if (loan.amount <= 0) { toast('Enter the loan amount.'); return; }
+    state.loans.unshift(loan);
+    saveState();
+    renderAll();
+    toast('Loan recorded');
+  }
+
+  function updateLoan(id, clientName, amount, date, dueDate, note) {
+    const l = state.loans.find((x) => x.id === id);
+    if (!l) return false;
+    l.clientName = String(clientName ?? '').trim().slice(0, 100);
+    l.amount     = Math.max(0, num(amount));
+    l.date       = date || todayISO();
+    l.dueDate    = dueDate || '';
+    l.note       = String(note ?? '').trim().slice(0, 200);
+    saveState();
+    renderAll();
+    toast('Loan updated');
+    return true;
+  }
+
+  function recordLoanPayment(id, paymentAmount) {
+    const l = state.loans.find((x) => x.id === id);
+    if (!l) return;
+    const balance = loanBalance(l);
+    const amount  = Math.min(Math.max(0, Math.floor(num(paymentAmount))), balance);
+    if (amount <= 0) { toast('Enter a valid payment amount.'); return; }
+    l.amountPaid += amount;
+    saveState();
+    renderAll();
+    toast(loanStatus(l) === 'paid'
+      ? `Loan fully paid — ${l.clientName}`
+      : `Payment of ${formatMoney(amount)} recorded`);
+  }
+
+  function deleteLoan(id) {
+    const idx = state.loans.findIndex((x) => x.id === id);
+    if (idx === -1) return;
+    state.loans.splice(idx, 1);
+    saveState();
+    renderAll();
+    toast('Loan deleted');
+  }
+
   function resetAllData() {
     state = { bunches: [] };
     try {
@@ -712,13 +851,15 @@
   }
 
   // --- Tab navigation ---
-  /** @param {'home'|'bunches'|'details'} tab */
+  /** @param {'home'|'bunches'|'finance'|'details'} tab */
   function activateTab(tab) {
     el.sectionDashboard.hidden = tab !== 'home';
     el.sectionBunches.hidden   = tab !== 'bunches';
     el.sectionDetails.hidden   = tab !== 'details';
+    if (el.sectionFinance) el.sectionFinance.hidden = tab !== 'finance';
     if (el.navTabHome)    el.navTabHome.classList.toggle('is-active',    tab === 'home');
     if (el.navTabBunches) el.navTabBunches.classList.toggle('is-active', tab === 'bunches');
+    if (el.navTabFinance) el.navTabFinance.classList.toggle('is-active', tab === 'finance');
     window.scrollTo(0, 0);
   }
 
@@ -972,6 +1113,104 @@
     });
   }
 
+  function renderFinance() {
+    if (!el.financeSummary || !el.loanList) return;
+
+    const fin = computeFinance();
+
+    // Summary metrics
+    el.financeSummary.innerHTML = `
+      <div class="fin-metric">
+        <span class="fin-metric-label">Lent out</span>
+        <span class="fin-metric-val">${escapeHtml(formatMoney(fin.totalLent))}</span>
+      </div>
+      <div class="fin-metric">
+        <span class="fin-metric-label">Outstanding</span>
+        <span class="fin-metric-val${fin.outstanding > 0 ? ' loss' : ''}">${escapeHtml(formatMoney(fin.outstanding))}</span>
+      </div>
+      <div class="fin-metric">
+        <span class="fin-metric-label">Recovered</span>
+        <span class="fin-metric-val${fin.totalRecovered > 0 ? ' profit' : ''}">${escapeHtml(formatMoney(fin.totalRecovered))}</span>
+      </div>`;
+
+    // Loan cards
+    if (state.loans.length === 0) {
+      el.loanList.innerHTML = '';
+      if (el.loanEmpty) el.loanEmpty.hidden = false;
+      return;
+    }
+    if (el.loanEmpty) el.loanEmpty.hidden = true;
+    el.loanList.innerHTML = state.loans.map(loanCardHtml).join('');
+
+    // Delegate events inside loan cards
+    el.loanList.querySelectorAll('[data-loan-action]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const action = btn.getAttribute('data-loan-action');
+        const id     = btn.getAttribute('data-id');
+        if (action === 'payment') openPaymentModal(id);
+        else if (action === 'edit')   openEditLoanModal(id);
+        else if (action === 'delete') openDeleteLoanConfirm(id);
+      });
+    });
+  }
+
+  function loanCardHtml(l) {
+    const status  = loanStatus(l);
+    const balance = loanBalance(l);
+    const overdue = isOverdue(l);
+    const paidPct = l.amount > 0 ? Math.min(100, (l.amountPaid / l.amount) * 100).toFixed(1) : 0;
+    const labels  = { outstanding: 'Outstanding', partial: 'Part paid', paid: 'Paid in full' };
+
+    const dueLine = l.dueDate
+      ? `<p class="lc-due${overdue ? ' overdue' : ''}">
+           ${overdue ? '⚠ Overdue · ' : 'Due: '}${escapeHtml(l.dueDate)}
+         </p>`
+      : '';
+
+    const noteLine = l.note
+      ? `<p class="lc-note">"${escapeHtml(l.note)}"</p>`
+      : '';
+
+    const payBtn = status !== 'paid'
+      ? `<button type="button" class="btn btn-primary btn-sm" data-loan-action="payment" data-id="${escapeAttr(l.id)}">Record payment</button>`
+      : '';
+
+    return `
+      <article class="loan-card card">
+        <div class="lc-header">
+          <div>
+            <p class="lc-client">${escapeHtml(l.clientName || 'Unknown client')}</p>
+            <p class="lc-date">Given: ${escapeHtml(l.date)}</p>
+          </div>
+          <span class="lc-status ${status}">${labels[status]}</span>
+        </div>
+        <div class="lc-amounts">
+          <div class="lc-amount-item">
+            <span class="lca-label">Lent</span>
+            <span class="lca-value">${escapeHtml(formatMoney(l.amount))}</span>
+          </div>
+          <div class="lc-amount-item">
+            <span class="lca-label">Paid back</span>
+            <span class="lca-value paid">${escapeHtml(formatMoney(l.amountPaid))}</span>
+          </div>
+          <div class="lc-amount-item">
+            <span class="lca-label">Balance</span>
+            <span class="lca-value${balance > 0 ? ' balance' : ''}">${escapeHtml(formatMoney(balance))}</span>
+          </div>
+        </div>
+        <div class="lc-progress">
+          <div class="lc-progress-fill" style="width:${paidPct}%"></div>
+        </div>
+        ${dueLine}
+        ${noteLine}
+        <div class="lc-actions">
+          ${payBtn}
+          <button type="button" class="btn btn-secondary btn-sm" data-loan-action="edit" data-id="${escapeAttr(l.id)}">Edit</button>
+          <button type="button" class="btn btn-danger btn-sm" data-loan-action="delete" data-id="${escapeAttr(l.id)}">Delete</button>
+        </div>
+      </article>`;
+  }
+
   function escapeHtml(s) {
     return String(s)
       .replace(/&/g, '&amp;')
@@ -987,6 +1226,7 @@
   function renderAll() {
     renderDashboard();
     renderBunchList();
+    renderFinance();
     if (activeDetailId && findBunch(activeDetailId)) {
       renderDetails(activeDetailId);
     }
@@ -1163,6 +1403,59 @@
     openModal(el.modalExpenses);
   }
 
+  function openAddLoanModal() {
+    if (el.loanEditId)  el.loanEditId.value  = '';
+    if (el.loanClient)  el.loanClient.value  = '';
+    if (el.loanAmount)  el.loanAmount.value  = '';
+    if (el.loanDate)    el.loanDate.value    = todayISO();
+    if (el.loanDue)     el.loanDue.value     = '';
+    if (el.loanNote)    el.loanNote.value    = '';
+    const t = document.getElementById('modal-loan-title');
+    const s = document.getElementById('btn-save-loan');
+    if (t) t.textContent = 'Add loan';
+    if (s) s.textContent = 'Save loan';
+    openModal(el.modalLoan);
+    setTimeout(() => el.loanClient && el.loanClient.focus(), 60);
+  }
+
+  function openEditLoanModal(id) {
+    const l = state.loans.find((x) => x.id === id);
+    if (!l) return;
+    if (el.loanEditId)  el.loanEditId.value  = id;
+    if (el.loanClient)  el.loanClient.value  = l.clientName;
+    if (el.loanAmount)  el.loanAmount.value  = String(l.amount);
+    if (el.loanDate)    el.loanDate.value    = l.date;
+    if (el.loanDue)     el.loanDue.value     = l.dueDate;
+    if (el.loanNote)    el.loanNote.value    = l.note;
+    const t = document.getElementById('modal-loan-title');
+    const s = document.getElementById('btn-save-loan');
+    if (t) t.textContent = 'Edit loan';
+    if (s) s.textContent = 'Update loan';
+    openModal(el.modalLoan);
+  }
+
+  function openPaymentModal(id) {
+    const l = state.loans.find((x) => x.id === id);
+    if (!l) return;
+    const balance = loanBalance(l);
+    if (el.paymentLoanId)   el.paymentLoanId.value   = id;
+    if (el.paymentLoanInfo) el.paymentLoanInfo.textContent =
+      `${l.clientName} — Balance: ${formatMoney(balance)}`;
+    if (el.paymentAmount)   el.paymentAmount.value   = String(balance);
+    openModal(el.modalPayment);
+    setTimeout(() => el.paymentAmount && el.paymentAmount.select(), 60);
+  }
+
+  function openDeleteLoanConfirm(id) {
+    const l = state.loans.find((x) => x.id === id);
+    if (!l) return;
+    loanToDeleteId = id;
+    const msg = document.getElementById('delete-loan-msg');
+    if (msg) msg.textContent =
+      `Delete loan for "${l.clientName}" (${formatMoney(l.amount)})? This cannot be undone.`;
+    openModal(el.modalDeleteLoan);
+  }
+
   function updateBunchExpenses(id, name, capital, worker, transport) {
     const b = findBunch(id);
     if (!b) return false;
@@ -1189,6 +1482,7 @@
     // Bottom nav tabs
     if (el.navTabHome)    el.navTabHome.addEventListener('click',    () => activateTab('home'));
     if (el.navTabBunches) el.navTabBunches.addEventListener('click', () => activateTab('bunches'));
+    if (el.navTabFinance) el.navTabFinance.addEventListener('click', () => activateTab('finance'));
     if (el.navTabAdd)     el.navTabAdd.addEventListener('click',     () => openAddBunchModal());
 
     // Add bunch (legacy FAB ref kept for back-compat; nav tab is now primary trigger)
@@ -1326,6 +1620,58 @@
     el.btnDarkMode.addEventListener('click', () => {
       applyDarkMode(!document.body.classList.contains('dark'));
     });
+
+    // Finance: Add loan button
+    if (el.btnOpenAddLoan) el.btnOpenAddLoan.addEventListener('click', openAddLoanModal);
+
+    // Loan modal (add / edit)
+    if (el.modalLoan) {
+      if (el.modalLoanClose) el.modalLoanClose.addEventListener('click', () => closeModal(el.modalLoan));
+      if (el.btnCancelLoan)  el.btnCancelLoan.addEventListener('click',  () => closeModal(el.modalLoan));
+      el.formLoan.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const editId = el.loanEditId.value;
+        if (editId) {
+          const ok = updateLoan(editId, el.loanClient.value, el.loanAmount.value,
+            el.loanDate.value, el.loanDue.value, el.loanNote.value);
+          if (ok) closeModal(el.modalLoan);
+        } else {
+          addLoan(el.loanClient.value, el.loanAmount.value,
+            el.loanDate.value, el.loanDue.value, el.loanNote.value);
+          closeModal(el.modalLoan);
+        }
+      });
+      el.modalLoan.addEventListener('click', (e) => {
+        if (e.target === el.modalLoan) closeModal(el.modalLoan);
+      });
+    }
+
+    // Payment modal
+    if (el.modalPayment) {
+      if (el.modalPaymentClose) el.modalPaymentClose.addEventListener('click', () => closeModal(el.modalPayment));
+      if (el.btnCancelPayment)  el.btnCancelPayment.addEventListener('click',  () => closeModal(el.modalPayment));
+      el.formPayment.addEventListener('submit', (e) => {
+        e.preventDefault();
+        recordLoanPayment(el.paymentLoanId.value, el.paymentAmount.value);
+        closeModal(el.modalPayment);
+      });
+      el.modalPayment.addEventListener('click', (e) => {
+        if (e.target === el.modalPayment) closeModal(el.modalPayment);
+      });
+    }
+
+    // Delete loan confirmation
+    if (el.modalDeleteLoan) {
+      if (el.btnDeleteLoanCancel) el.btnDeleteLoanCancel.addEventListener('click',
+        () => { loanToDeleteId = null; closeModal(el.modalDeleteLoan); });
+      if (el.btnDeleteLoanConfirm) el.btnDeleteLoanConfirm.addEventListener('click', () => {
+        if (loanToDeleteId) { deleteLoan(loanToDeleteId); loanToDeleteId = null; }
+        closeModal(el.modalDeleteLoan);
+      });
+      el.modalDeleteLoan.addEventListener('click', (e) => {
+        if (e.target === el.modalDeleteLoan) { loanToDeleteId = null; closeModal(el.modalDeleteLoan); }
+      });
+    }
 
     // Escape closes modals
     document.addEventListener('keydown', (e) => {
