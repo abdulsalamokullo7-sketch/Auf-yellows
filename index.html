@@ -41,6 +41,23 @@
         <input type="password" id="pin-input" class="input pin-input" inputmode="numeric" maxlength="8" autocomplete="current-password" placeholder="••••" />
         <p id="pin-error" class="pin-error" role="alert" hidden></p>
         <button type="button" class="btn btn-primary btn-block" id="pin-submit">Unlock</button>
+        <p class="pin-forgot-wrap">
+          <button type="button" class="btn btn-link" id="pin-forgot-btn">Forgot PIN?</button>
+        </p>
+      </div>
+
+      <!-- Recovery: phone + new PIN (only if phone was registered in Settings) -->
+      <div id="pin-recovery" hidden>
+        <p class="pin-recovery-hint">Enter the phone number you saved in Settings and choose a new PIN.</p>
+        <label class="field-label" for="pin-recovery-phone">Phone number</label>
+        <input type="tel" id="pin-recovery-phone" class="input pin-input" inputmode="numeric" autocomplete="tel" placeholder="e.g. 2567XXXXXXXX" />
+        <label class="field-label" for="pin-recovery-new" style="margin-top:0.75rem;">New PIN (4–8 digits)</label>
+        <input type="password" id="pin-recovery-new" class="input pin-input" inputmode="numeric" minlength="4" maxlength="8" autocomplete="new-password" />
+        <label class="field-label" for="pin-recovery-confirm2" style="margin-top:0.75rem;">Confirm new PIN</label>
+        <input type="password" id="pin-recovery-confirm2" class="input pin-input" inputmode="numeric" minlength="4" maxlength="8" autocomplete="new-password" />
+        <p id="pin-recovery-error" class="pin-error" role="alert" hidden></p>
+        <button type="button" class="btn btn-primary btn-block" id="pin-recovery-submit" style="margin-top:0.75rem;">Reset PIN &amp; unlock</button>
+        <button type="button" class="btn btn-secondary btn-block" id="pin-recovery-back" style="margin-top:0.5rem;">Back</button>
       </div>
     </div>
   </div>
@@ -56,6 +73,7 @@
           </div>
         </div>
         <div class="header-actions">
+          <button type="button" class="btn btn-ghost btn-icon" id="btn-open-settings" title="Settings" aria-label="Settings">⚙️</button>
           <button type="button" class="btn btn-ghost btn-icon" id="btn-dark-mode" title="Toggle dark mode" aria-label="Toggle dark mode">🌙</button>
           <button type="button" class="btn btn-ghost btn-sm" id="btn-reset-data">Reset data</button>
         </div>
@@ -378,15 +396,93 @@
         <div class="modal-head">
           <h2 id="modal-reset-title">Reset all data?</h2>
         </div>
-        <p class="reset-copy">This removes every bunch and cannot be undone.</p>
+        <p class="reset-copy">This removes every bunch and loan. Enter your PIN to confirm.</p>
+        <label class="field" style="margin-top:0.75rem;">
+          <span class="field-label">PIN</span>
+          <input type="password" id="reset-pin-confirm" class="input" inputmode="numeric" maxlength="8" autocomplete="off" /></label>
+        <p id="reset-pin-error" class="pin-error" role="alert" hidden></p>
         <div class="modal-actions">
           <button type="button" class="btn btn-secondary" id="btn-reset-cancel">Cancel</button>
           <button type="button" class="btn btn-danger" id="btn-reset-confirm">Reset everything</button>
         </div>
       </div>
     </div>
+
+    <!-- Settings: storage, offline, security, backup -->
+    <div class="modal-backdrop" id="modal-settings" role="dialog" aria-modal="true" aria-labelledby="modal-settings-title" hidden>
+      <div class="modal card modal-settings">
+        <div class="modal-head">
+          <h2 id="modal-settings-title">Settings</h2>
+          <button type="button" class="btn btn-icon btn-close" id="modal-settings-close" aria-label="Close">×</button>
+        </div>
+        <div class="settings-scroll">
+          <section class="settings-section">
+            <h3 class="settings-h">Data &amp; storage</h3>
+            <p class="settings-p">Your bunches and loans are saved on <strong>this device</strong> in the browser (<strong>localStorage</strong>). The app writes the same data twice and checks both copies after each save. Your data <strong>survives refresh</strong>, closing the tab, and normal phone restarts — it is not sent to any server unless you add one later. It can be lost if you clear site data, uninstall the browser, or use a strict private mode — use <strong>Download backup</strong> for a safe copy.</p>
+            <p class="settings-meta" id="settings-storage-meta"></p>
+            <button type="button" class="btn btn-secondary btn-block" id="btn-export-backup">Download backup (JSON)</button>
+            <label class="field" style="margin-top:0.75rem;">
+              <span class="field-label">Restore from backup file</span>
+              <input type="file" id="restore-file-input" accept=".json,application/json" class="input" />
+            </label>
+          </section>
+          <section class="settings-section">
+            <h3 class="settings-h">Offline &amp; updates</h3>
+            <p class="settings-p" id="settings-offline-status">After the first visit, the app shell loads without a network.</p>
+            <p class="settings-p">Business data is always local — it does not need internet.</p>
+          </section>
+          <section class="settings-section">
+            <h3 class="settings-h">Security</h3>
+            <p class="settings-p">PIN is stored as a <strong>hash</strong> (SHA-256) with a random salt — not as plain text. Unlock persists across <strong>refresh</strong> in this tab; use <strong>Lock app</strong> or close the tab to require PIN again.</p>
+            <button type="button" class="btn btn-primary btn-block" id="btn-change-pin">Change PIN</button>
+            <button type="button" class="btn btn-secondary btn-block" id="btn-lock-app" style="margin-top:0.5rem;">Lock app now</button>
+          </section>
+          <section class="settings-section">
+            <h3 class="settings-h">Recovery (optional)</h3>
+            <p class="settings-p">Save a phone number so you can reset the PIN from the lock screen if you forget it.</p>
+            <label class="field"><span class="field-label">Phone (digits)</span>
+              <input type="tel" id="settings-phone1" class="input" inputmode="numeric" placeholder="e.g. 2567XXXXXXXX" autocomplete="tel" /></label>
+            <label class="field"><span class="field-label">Confirm phone</span>
+              <input type="tel" id="settings-phone2" class="input" inputmode="numeric" placeholder="Repeat" autocomplete="tel" /></label>
+            <p id="settings-phone-error" class="pin-error" role="alert" hidden></p>
+            <button type="button" class="btn btn-secondary btn-block" id="btn-save-phone">Save recovery phone</button>
+          </section>
+          <section class="settings-section">
+            <h3 class="settings-h">Backup email</h3>
+            <p class="settings-p"><strong>Under maintenance.</strong> Email backup/recovery is temporarily disabled. Use JSON download/restore backup for now.</p>
+            <label class="field"><span class="field-label">Email</span>
+              <input type="email" id="settings-backup-email" class="input" placeholder="Under maintenance" autocomplete="email" disabled /></label>
+            <button type="button" class="btn btn-secondary btn-block" id="btn-save-email">Under maintenance</button>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- Change PIN -->
+    <div class="modal-backdrop" id="modal-change-pin" role="dialog" aria-modal="true" aria-labelledby="modal-change-pin-title" hidden>
+      <div class="modal card modal-sm">
+        <div class="modal-head">
+          <h2 id="modal-change-pin-title">Change PIN</h2>
+          <button type="button" class="btn btn-icon btn-close" id="modal-change-pin-close" aria-label="Close">×</button>
+        </div>
+        <form id="form-change-pin" class="form">
+          <label class="field"><span class="field-label">Current PIN</span>
+            <input type="password" id="change-pin-old" class="input" inputmode="numeric" maxlength="8" required autocomplete="off" /></label>
+          <label class="field"><span class="field-label">New PIN</span>
+            <input type="password" id="change-pin-new" class="input" inputmode="numeric" minlength="4" maxlength="8" required autocomplete="new-password" /></label>
+          <label class="field"><span class="field-label">Confirm new PIN</span>
+            <input type="password" id="change-pin-confirm" class="input" inputmode="numeric" minlength="4" maxlength="8" required autocomplete="new-password" /></label>
+          <p id="change-pin-error" class="pin-error" role="alert" hidden></p>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" id="btn-change-pin-cancel">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save PIN</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 
+  <script src="auf-config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

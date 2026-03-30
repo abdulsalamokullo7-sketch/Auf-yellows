@@ -102,6 +102,81 @@ body.dark .pin-overlay {
   display: none !important;
 }
 
+.pin-forgot-wrap {
+  margin: 0.75rem 0 0;
+  text-align: center;
+}
+
+.btn-link {
+  background: none;
+  border: none;
+  color: var(--green-deep);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+  padding: 0.25rem;
+}
+
+body.dark .btn-link {
+  color: var(--green-deep);
+  filter: brightness(1.15);
+}
+
+.pin-recovery-hint {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  text-align: left;
+  margin: 0 0 0.75rem;
+}
+
+/* Settings modal */
+.modal-settings {
+  width: min(100%, 440px);
+  max-height: min(92dvh, 100%);
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-scroll {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 0 1rem;
+  flex: 1;
+}
+
+.settings-section {
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-section:last-child {
+  border-bottom: none;
+}
+
+.settings-h {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: var(--green-deep);
+}
+
+.settings-p {
+  margin: 0 0 0.65rem;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.settings-p code {
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+
+.settings-meta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0 0 0.75rem;
+}
+
 .pin-card {
   width: min(100%, 400px);
   padding: clamp(1.25rem, 4vw, 1.75rem);

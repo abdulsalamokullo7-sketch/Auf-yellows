@@ -2,8 +2,8 @@
  * Service worker — caches the app shell (HTML/CSS/JS) so the UI loads offline
  * after the first successful visit. Your business data still lives in localStorage.
  */
-const CACHE_NAME = 'auf-yellows-v2';
-const CORE = ['index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icon.svg'];
+const CACHE_NAME = 'auf-yellows-v3';
+const CORE = ['index.html', 'style.css', 'app.js', 'auf-config.js', 'manifest.webmanifest', 'icon.svg'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

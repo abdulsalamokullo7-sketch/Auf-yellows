@@ -12,7 +12,16 @@
   const STORAGE_META_KEY = 'auf_yellows_meta';
   const PIN_STORAGE_KEY = 'auf_yellows_pin';
   const DARK_KEY = 'auf_yellows_dark';
+  /** @deprecated migrated to tab unlock + hash PIN */
   const SESSION_UNLOCK_KEY = 'auf_yellows_unlocked';
+  const LS_PIN_HASH = 'auf_yellows_pin_hash_v2';
+  const LS_PIN_SALT = 'auf_yellows_pin_salt_v2';
+  const LS_PIN_TAB_UNLOCK = 'auf_pin_tab_unlock_v1';
+  const SS_PIN_TAB_ID = 'auf_pin_tab_id';
+  const SS_PIN_UNLOCK_SEAL = 'auf_pin_unlock_seal';
+  const LS_PHONE_RESET_HASH = 'auf_phone_reset_hash_v1';
+  const LS_PHONE_RESET_SALT = 'auf_phone_reset_salt_v1';
+  const LS_BACKUP_EMAIL = 'auf_backup_email_v1';
   const DEFAULT_PIN = null; /* No default — user creates their own on first launch */
 
   /** Allowed expected prices per cluster (UGX) — dropdowns only */
@@ -41,6 +50,8 @@
 
   /** App event listeners attached once after PIN unlock */
   let appInitialized = false;
+  /** Set in bootPinScreen — lock app from Settings */
+  let lockAppFromSettings = null;
 
   // --- DOM refs (PIN elements are grabbed in bootPinScreen) ---
   const el = {
@@ -129,6 +140,31 @@
     modalReset: document.getElementById('modal-reset'),
     btnResetCancel: document.getElementById('btn-reset-cancel'),
     btnResetConfirm: document.getElementById('btn-reset-confirm'),
+    resetPinConfirm: document.getElementById('reset-pin-confirm'),
+    resetPinError: document.getElementById('reset-pin-error'),
+    btnOpenSettings: document.getElementById('btn-open-settings'),
+    modalSettings: document.getElementById('modal-settings'),
+    modalSettingsClose: document.getElementById('modal-settings-close'),
+    settingsStorageMeta: document.getElementById('settings-storage-meta'),
+    settingsOfflineStatus: document.getElementById('settings-offline-status'),
+    btnExportBackup: document.getElementById('btn-export-backup'),
+    restoreFileInput: document.getElementById('restore-file-input'),
+    btnChangePin: document.getElementById('btn-change-pin'),
+    btnLockApp: document.getElementById('btn-lock-app'),
+    settingsPhone1: document.getElementById('settings-phone1'),
+    settingsPhone2: document.getElementById('settings-phone2'),
+    settingsPhoneError: document.getElementById('settings-phone-error'),
+    btnSavePhone: document.getElementById('btn-save-phone'),
+    settingsBackupEmail: document.getElementById('settings-backup-email'),
+    btnSaveEmail: document.getElementById('btn-save-email'),
+    modalChangePin: document.getElementById('modal-change-pin'),
+    modalChangePinClose: document.getElementById('modal-change-pin-close'),
+    formChangePin: document.getElementById('form-change-pin'),
+    changePinOld: document.getElementById('change-pin-old'),
+    changePinNew: document.getElementById('change-pin-new'),
+    changePinConfirm: document.getElementById('change-pin-confirm'),
+    changePinError: document.getElementById('change-pin-error'),
+    btnChangePinCancel: document.getElementById('btn-change-pin-cancel'),
   };
 
   /** Current bunch id when viewing details (string | null) */
@@ -169,7 +205,7 @@
   }
 
   function loadState() {
-    state = { bunches: [] };
+    state = { bunches: [], loans: [] };
 
     const tryLoad = (key) => {
       try {
@@ -217,12 +253,23 @@
         localStorage.setItem(STORAGE_META_KEY, JSON.stringify({ savedAt: Date.now(), v: 1 }));
       } catch {}
 
-      /* Read-back verification: confirm what we wrote is actually stored */
-      const check = localStorage.getItem(STORAGE_KEY);
-      if (check !== payload) {
+      /* Read-back verification: both keys must match (guards single-key corruption) */
+      const checkPri = localStorage.getItem(STORAGE_KEY);
+      const checkBak = localStorage.getItem(STORAGE_BACKUP_KEY);
+      if (checkPri !== payload) {
         console.warn('AUF: read-back mismatch on primary key');
         if (showToastOnFail) toast('Warning: data may not have saved correctly.');
         return false;
+      }
+      if (checkBak !== payload) {
+        try {
+          localStorage.setItem(STORAGE_BACKUP_KEY, payload);
+        } catch (_) {}
+        const checkBak2 = localStorage.getItem(STORAGE_BACKUP_KEY);
+        if (checkBak2 !== payload) {
+          console.warn('AUF: backup key mismatch after retry — primary still OK');
+          /* Primary verified; loadState reads primary first, so data is still safe */
+        }
       }
       return true;
     } catch (e) {
@@ -253,6 +300,17 @@
     );
     window.addEventListener('pagehide', flushStateToStorage, false);
     window.addEventListener('beforeunload', flushStateToStorage, false);
+    /* Extra safety: periodic flush catches any rare path without saveState() */
+    window.setInterval(() => {
+      flushStateToStorage();
+    }, 180000);
+  }
+
+  /** Ask browser to reduce eviction risk (best-effort; not all browsers support it). */
+  function requestPersistentStorageIfSupported() {
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist().catch(() => {});
+    }
   }
 
   /** False in some private modes or when storage is disabled */
@@ -560,14 +618,51 @@
     };
   }
 
-  // --- PIN ---
+  // --- PIN (hashed + tab unlock, like AgriSmart maize app) ---
   function normalizePin(s) {
     return String(s ?? '')
       .trim()
       .replace(/\u200e|\u200f/g, '');
   }
 
-  function hasStoredPin() {
+  function randomSaltHex() {
+    const a = new Uint8Array(16);
+    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(a);
+    else for (let r = 0; r < 16; r++) a[r] = Math.floor(Math.random() * 256);
+    return Array.from(a)
+      .map((x) => x.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  function hashPinFallback(s) {
+    let h = 5381;
+    for (let i = 0; i < s.length; i++) h = (h << 5) + h + s.charCodeAt(i);
+    return `fb_${(h >>> 0).toString(16)}_${s.length}`;
+  }
+
+  function bufToHex(buf) {
+    return Array.from(new Uint8Array(buf))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  }
+
+  function hashPinWithSaltAsync(pin, salt) {
+    const s = `${salt}|${pin}`;
+    if (window.crypto && crypto.subtle) {
+      return crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)).then(bufToHex);
+    }
+    return Promise.resolve(hashPinFallback(s));
+  }
+
+  function hasHashPin() {
+    try {
+      return !!(localStorage.getItem(LS_PIN_HASH) && localStorage.getItem(LS_PIN_SALT));
+    } catch {
+      return false;
+    }
+  }
+
+  function hasLegacyPlainPin() {
     try {
       const raw = localStorage.getItem(PIN_STORAGE_KEY);
       return raw != null && normalizePin(raw).length >= 4;
@@ -576,7 +671,11 @@
     }
   }
 
-  function getStoredPin() {
+  function hasStoredPin() {
+    return hasHashPin() || hasLegacyPlainPin();
+  }
+
+  function getLegacyPlainPin() {
     try {
       const raw = localStorage.getItem(PIN_STORAGE_KEY);
       if (raw != null && normalizePin(raw).length >= 4) return normalizePin(raw);
@@ -584,24 +683,133 @@
     return null;
   }
 
-  function setStoredPin(pin) {
+  async function persistNewPin(pin) {
+    const p = normalizePin(pin);
+    const salt = randomSaltHex();
+    const h = await hashPinWithSaltAsync(p, salt);
     try {
-      localStorage.setItem(PIN_STORAGE_KEY, normalizePin(pin));
+      localStorage.setItem(LS_PIN_SALT, salt);
+      localStorage.setItem(LS_PIN_HASH, h);
+      localStorage.removeItem(PIN_STORAGE_KEY);
     } catch {}
   }
 
-  function isSessionUnlocked() {
+  async function migrateLegacyPinToHash(plainPin) {
+    await persistNewPin(plainPin);
+  }
+
+  async function verifyPinAsync(pin) {
+    const p = normalizePin(pin);
+    if (!p || p.length < 4) return false;
+    if (hasHashPin()) {
+      try {
+        const salt = localStorage.getItem(LS_PIN_SALT);
+        const stored = localStorage.getItem(LS_PIN_HASH);
+        const h = await hashPinWithSaltAsync(p, salt || '');
+        if (h === stored) return true;
+      } catch {}
+      return false;
+    }
+    const leg = getLegacyPlainPin();
+    if (leg != null && p === leg) {
+      await migrateLegacyPinToHash(p);
+      return true;
+    }
+    return false;
+  }
+
+  function pinEnsureTabId() {
     try {
-      return sessionStorage.getItem(SESSION_UNLOCK_KEY) === '1';
+      let t = sessionStorage.getItem(SS_PIN_TAB_ID);
+      if (!t) {
+        t = `t_${Math.random().toString(36).slice(2, 12)}_${Date.now().toString(36)}`;
+        sessionStorage.setItem(SS_PIN_TAB_ID, t);
+      }
+      return t;
+    } catch {
+      return '';
+    }
+  }
+
+  function pinMarkUnlocked() {
+    try {
+      localStorage.setItem(LS_PIN_TAB_UNLOCK, '1');
+      const tab = pinEnsureTabId();
+      if (tab) sessionStorage.setItem(SS_PIN_UNLOCK_SEAL, tab);
+      sessionStorage.removeItem(SESSION_UNLOCK_KEY);
+    } catch {}
+  }
+
+  function pinClearUnlock() {
+    try {
+      localStorage.removeItem(LS_PIN_TAB_UNLOCK);
+      sessionStorage.removeItem(SS_PIN_UNLOCK_SEAL);
+      sessionStorage.removeItem(SESSION_UNLOCK_KEY);
+    } catch {}
+  }
+
+  function migrateLegacySessionUnlock() {
+    try {
+      if (sessionStorage.getItem(SESSION_UNLOCK_KEY) === '1') {
+        pinMarkUnlocked();
+        sessionStorage.removeItem(SESSION_UNLOCK_KEY);
+      }
+    } catch {}
+  }
+
+  function isPinTabUnlocked() {
+    try {
+      if (localStorage.getItem(LS_PIN_TAB_UNLOCK) !== '1') return false;
+      const tab = sessionStorage.getItem(SS_PIN_TAB_ID);
+      const seal = sessionStorage.getItem(SS_PIN_UNLOCK_SEAL);
+      return !!tab && !!seal && seal === tab;
     } catch {
       return false;
     }
   }
 
+  function isSessionUnlocked() {
+    return isPinTabUnlocked();
+  }
+
   function setSessionUnlocked() {
+    pinMarkUnlocked();
+  }
+
+  function normalizePhoneDigits(s) {
+    return String(s || '').replace(/\D/g, '');
+  }
+
+  function isValidPhoneDigits(d) {
+    return d.length >= 9 && d.length <= 15;
+  }
+
+  async function persistRegisteredPhone(digits) {
+    const salt = randomSaltHex();
+    const hash = await hashPinWithSaltAsync(digits, salt);
     try {
-      sessionStorage.setItem(SESSION_UNLOCK_KEY, '1');
+      localStorage.setItem(LS_PHONE_RESET_SALT, salt);
+      localStorage.setItem(LS_PHONE_RESET_HASH, hash);
     } catch {}
+  }
+
+  function isPhoneRecoveryConfigured() {
+    try {
+      return !!(localStorage.getItem(LS_PHONE_RESET_HASH) && localStorage.getItem(LS_PHONE_RESET_SALT));
+    } catch {
+      return false;
+    }
+  }
+
+  async function verifyPhoneDigitsAsync(digits) {
+    try {
+      const salt = localStorage.getItem(LS_PHONE_RESET_SALT);
+      const stored = localStorage.getItem(LS_PHONE_RESET_HASH);
+      const h = await hashPinWithSaltAsync(digits, salt || '');
+      return h === stored;
+    } catch {
+      return false;
+    }
   }
 
   // --- Dark mode ---
@@ -643,6 +851,7 @@
       el.modalAddBunch, el.modalCluster, el.modalSale,
       el.modalSpoil, el.modalReset, el.modalExpenses,
       el.modalLoan, el.modalPayment, el.modalDeleteLoan,
+      el.modalSettings, el.modalChangePin,
     ].some((m) => m && !m.hidden);
     if (!anyOpen) {
       document.documentElement.style.overflow = '';
@@ -661,6 +870,8 @@
       el.modalLoan,
       el.modalPayment,
       el.modalDeleteLoan,
+      el.modalSettings,
+      el.modalChangePin,
     ].forEach((m) => m && closeModal(m));
   }
 
@@ -837,13 +1048,30 @@
     toast('Loan deleted');
   }
 
-  function resetAllData() {
-    state = { bunches: [] };
+  async function resetAllData() {
+    const pin = el.resetPinConfirm ? normalizePin(el.resetPinConfirm.value) : '';
+    if (!pin) {
+      if (el.resetPinError) {
+        el.resetPinError.textContent = 'Enter your PIN to confirm.';
+        el.resetPinError.hidden = false;
+      }
+      return;
+    }
+    if (!(await verifyPinAsync(pin))) {
+      if (el.resetPinError) {
+        el.resetPinError.textContent = 'Incorrect PIN.';
+        el.resetPinError.hidden = false;
+      }
+      return;
+    }
+    if (el.resetPinError) el.resetPinError.hidden = true;
+    state = { bunches: [], loans: [] };
     try {
       localStorage.removeItem(STORAGE_META_KEY);
     } catch (_) {}
     saveState();
     activeDetailId = null;
+    if (el.resetPinConfirm) el.resetPinConfirm.value = '';
     closeModal(el.modalReset);
     showListView();
     renderAll();
@@ -1469,6 +1697,95 @@
     return true;
   }
 
+  function buildBackupObject() {
+    return {
+      backupVersion: 1,
+      exportedAt: new Date().toISOString(),
+      app: "AUF'S YELLOWS",
+      data: state,
+    };
+  }
+
+  function downloadBackupJson() {
+    try {
+      const json = JSON.stringify(buildBackupObject(), null, 2);
+      const blob = new Blob([json], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `auf-yellows-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast('Backup downloaded');
+    } catch {
+      toast('Could not create backup file.');
+    }
+  }
+
+  function applyRestoredState(obj) {
+    if (!obj || typeof obj !== 'object') return false;
+    const d = obj.data;
+    if (!d || typeof d !== 'object') return false;
+    if (!Array.isArray(d.bunches)) return false;
+    const parsed = parseStateFromRaw(JSON.stringify(d));
+    if (!parsed) return false;
+    state = parsed;
+    persistStateToDisk(true);
+    renderAll();
+    return true;
+  }
+
+  function restoreFromBackupFile(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const obj = JSON.parse(String(reader.result || ''));
+        if (applyRestoredState(obj)) {
+          toast('Backup restored');
+          closeModal(el.modalSettings);
+        } else toast('Invalid backup file.');
+      } catch {
+        toast('Could not read backup file.');
+      }
+    };
+    reader.onerror = () => toast('Could not read file.');
+    reader.readAsText(file);
+  }
+
+  function getBackupEmailStored() {
+    try {
+      return (localStorage.getItem(LS_BACKUP_EMAIL) || '').trim();
+    } catch {
+      return '';
+    }
+  }
+
+  function syncSettingsFormFields() {
+    if (el.settingsBackupEmail) el.settingsBackupEmail.value = getBackupEmailStored();
+    refreshSettingsMeta();
+    if (el.settingsOfflineStatus) {
+      let t = 'After the first visit, the app shell loads without a network.';
+      if ('serviceWorker' in navigator) {
+        t += ' Service worker: active.';
+      } else t += ' Service worker not supported.';
+      el.settingsOfflineStatus.textContent = t;
+    }
+  }
+
+  function refreshSettingsMeta() {
+    if (!el.settingsStorageMeta) return;
+    try {
+      const b = state.bunches ? state.bunches.length : 0;
+      const ln = state.loans ? state.loans.length : 0;
+      const probe = probeLocalStorage();
+      el.settingsStorageMeta.textContent = `Bunches: ${b} · Loans: ${ln} · Storage: ${probe ? 'OK' : 'blocked'}`;
+    } catch {
+      el.settingsStorageMeta.textContent = '';
+    }
+  }
+
   // --- Init after PIN (listeners registered once) ---
   function initAppAfterUnlock() {
     if (appInitialized) return;
@@ -1476,6 +1793,7 @@
 
     loadState();
     loadDarkMode();
+    requestPersistentStorageIfSupported();
     renderAll();
     activateTab('home');
 
@@ -1608,10 +1926,16 @@
       if (e.target === el.modalSpoil) closeModal(el.modalSpoil);
     });
 
-    // Reset
-    el.btnResetData.addEventListener('click', () => openModal(el.modalReset));
+    // Reset (requires PIN)
+    el.btnResetData.addEventListener('click', () => {
+      if (el.resetPinConfirm) el.resetPinConfirm.value = '';
+      if (el.resetPinError) el.resetPinError.hidden = true;
+      openModal(el.modalReset);
+    });
     el.btnResetCancel.addEventListener('click', () => closeModal(el.modalReset));
-    el.btnResetConfirm.addEventListener('click', resetAllData);
+    el.btnResetConfirm.addEventListener('click', () => {
+      resetAllData();
+    });
     el.modalReset.addEventListener('click', (e) => {
       if (e.target === el.modalReset) closeModal(el.modalReset);
     });
@@ -1620,6 +1944,145 @@
     el.btnDarkMode.addEventListener('click', () => {
       applyDarkMode(!document.body.classList.contains('dark'));
     });
+
+    // Settings
+    if (el.btnOpenSettings && el.modalSettings) {
+      el.btnOpenSettings.addEventListener('click', () => {
+        syncSettingsFormFields();
+        openModal(el.modalSettings);
+      });
+      if (el.modalSettingsClose) {
+        el.modalSettingsClose.addEventListener('click', () => closeModal(el.modalSettings));
+      }
+      el.modalSettings.addEventListener('click', (e) => {
+        if (e.target === el.modalSettings) closeModal(el.modalSettings);
+      });
+    }
+    if (el.btnExportBackup) {
+      el.btnExportBackup.addEventListener('click', () => downloadBackupJson());
+    }
+    if (el.restoreFileInput) {
+      el.restoreFileInput.addEventListener('change', () => {
+        const f = el.restoreFileInput.files && el.restoreFileInput.files[0];
+        el.restoreFileInput.value = '';
+        if (f) restoreFromBackupFile(f);
+      });
+    }
+    if (el.btnLockApp) {
+      el.btnLockApp.addEventListener('click', () => {
+        if (typeof lockAppFromSettings === 'function') lockAppFromSettings();
+        toast('Locked — enter PIN to continue');
+      });
+    }
+    if (el.btnChangePin && el.modalChangePin) {
+      el.btnChangePin.addEventListener('click', () => {
+        if (el.changePinOld) el.changePinOld.value = '';
+        if (el.changePinNew) el.changePinNew.value = '';
+        if (el.changePinConfirm) el.changePinConfirm.value = '';
+        if (el.changePinError) el.changePinError.hidden = true;
+        openModal(el.modalChangePin);
+      });
+      if (el.modalChangePinClose) {
+        el.modalChangePinClose.addEventListener('click', () => closeModal(el.modalChangePin));
+      }
+      if (el.btnChangePinCancel) {
+        el.btnChangePinCancel.addEventListener('click', () => closeModal(el.modalChangePin));
+      }
+      el.modalChangePin.addEventListener('click', (e) => {
+        if (e.target === el.modalChangePin) closeModal(el.modalChangePin);
+      });
+    }
+    if (el.formChangePin) {
+      el.formChangePin.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const oldP = normalizePin(el.changePinOld.value);
+        const newP = normalizePin(el.changePinNew.value);
+        const c = normalizePin(el.changePinConfirm.value);
+        if (el.changePinError) el.changePinError.hidden = true;
+        if (newP.length < 4 || !/^\d+$/.test(newP)) {
+          if (el.changePinError) {
+            el.changePinError.textContent = 'New PIN must be 4–8 digits.';
+            el.changePinError.hidden = false;
+          }
+          return;
+        }
+        if (newP !== c) {
+          if (el.changePinError) {
+            el.changePinError.textContent = 'New PINs do not match.';
+            el.changePinError.hidden = false;
+          }
+          return;
+        }
+        verifyPinAsync(oldP).then((ok) => {
+          if (!ok) {
+            if (el.changePinError) {
+              el.changePinError.textContent = 'Current PIN is incorrect.';
+              el.changePinError.hidden = false;
+            }
+            return;
+          }
+          persistNewPin(newP).then(
+            () => {
+              toast('PIN updated');
+              closeModal(el.modalChangePin);
+            },
+            () => {
+              if (el.changePinError) {
+                el.changePinError.textContent = 'Could not save PIN.';
+                el.changePinError.hidden = false;
+              }
+            }
+          );
+        });
+      });
+    }
+    if (el.btnSavePhone) {
+      el.btnSavePhone.addEventListener('click', () => {
+        const a = normalizePhoneDigits(el.settingsPhone1 ? el.settingsPhone1.value : '');
+        const b = normalizePhoneDigits(el.settingsPhone2 ? el.settingsPhone2.value : '');
+        if (el.settingsPhoneError) el.settingsPhoneError.hidden = true;
+        if (!isValidPhoneDigits(a) || !isValidPhoneDigits(b)) {
+          if (el.settingsPhoneError) {
+            el.settingsPhoneError.textContent = 'Enter a valid phone (9–15 digits).';
+            el.settingsPhoneError.hidden = false;
+          }
+          return;
+        }
+        if (a !== b) {
+          if (el.settingsPhoneError) {
+            el.settingsPhoneError.textContent = 'Numbers do not match.';
+            el.settingsPhoneError.hidden = false;
+          }
+          return;
+        }
+        persistRegisteredPhone(a).then(
+          () => {
+            toast('Recovery phone saved');
+            if (el.settingsPhone1) el.settingsPhone1.value = '';
+            if (el.settingsPhone2) el.settingsPhone2.value = '';
+          },
+          () => toast('Could not save — storage blocked?')
+        );
+      });
+    }
+    if (el.btnSaveEmail) {
+      el.btnSaveEmail.addEventListener('click', () => {
+        toast('Email backup is under maintenance for now.');
+        return;
+        const v = el.settingsBackupEmail ? (el.settingsBackupEmail.value || '').trim() : '';
+        if (v && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) {
+          toast('Enter a valid email or leave blank.');
+          return;
+        }
+        try {
+          if (v) localStorage.setItem(LS_BACKUP_EMAIL, v);
+          else localStorage.removeItem(LS_BACKUP_EMAIL);
+          toast('Email saved');
+        } catch {
+          toast('Could not save email.');
+        }
+      });
+    }
 
     // Finance: Add loan button
     if (el.btnOpenAddLoan) el.btnOpenAddLoan.addEventListener('click', openAddLoanModal);
@@ -1698,6 +2161,7 @@
 
   function bootPinScreen() {
     loadDarkMode();
+    migrateLegacySessionUnlock();
 
     const overlay = document.getElementById('pin-overlay');
     const appShell = document.getElementById('app-shell');
@@ -1713,6 +2177,15 @@
     const pinInput = document.getElementById('pin-input');
     const pinError = document.getElementById('pin-error');
     const pinSubmit = document.getElementById('pin-submit');
+    const pinForgotBtn = document.getElementById('pin-forgot-btn');
+
+    const recoveryDiv = document.getElementById('pin-recovery');
+    const recPhone = document.getElementById('pin-recovery-phone');
+    const recNew = document.getElementById('pin-recovery-new');
+    const recConfirm2 = document.getElementById('pin-recovery-confirm2');
+    const recErr = document.getElementById('pin-recovery-error');
+    const recSubmit = document.getElementById('pin-recovery-submit');
+    const recBack = document.getElementById('pin-recovery-back');
 
     if (!overlay || !appShell) {
       console.error("AUF'S YELLOWS: Missing DOM nodes.");
@@ -1731,6 +2204,12 @@
       pinError.hidden = !msg;
     }
 
+    function showRecoveryError(msg) {
+      if (!recErr) return;
+      recErr.textContent = msg || '';
+      recErr.hidden = !msg;
+    }
+
     function dismiss() {
       overlay.hidden = true;
       overlay.setAttribute('aria-hidden', 'true');
@@ -1740,7 +2219,40 @@
       initAppAfterUnlock();
     }
 
-    /* Already unlocked this session */
+    function showUnlockUi() {
+      if (setupDiv) setupDiv.hidden = true;
+      if (unlockDiv) unlockDiv.hidden = false;
+      if (recoveryDiv) recoveryDiv.hidden = true;
+    }
+
+    function showRecoveryUi() {
+      if (setupDiv) setupDiv.hidden = true;
+      if (unlockDiv) unlockDiv.hidden = true;
+      if (recoveryDiv) recoveryDiv.hidden = false;
+      showRecoveryError('');
+      if (recPhone) recPhone.value = '';
+      if (recNew) recNew.value = '';
+      if (recConfirm2) recConfirm2.value = '';
+      if (recPhone) recPhone.focus();
+    }
+
+    lockAppFromSettings = function lockAppNow() {
+      pinClearUnlock();
+      closeAllModals();
+      if (appShell) {
+        appShell.hidden = true;
+        appShell.setAttribute('hidden', '');
+      }
+      overlay.hidden = false;
+      overlay.removeAttribute('hidden');
+      overlay.removeAttribute('aria-hidden');
+      showUnlockUi();
+      if (subText) subText.textContent = 'Enter your PIN to continue';
+      if (pinInput) pinInput.value = '';
+      showUnlockError('');
+      window.scrollTo(0, 0);
+    };
+
     if (isSessionUnlocked() && hasStoredPin()) {
       dismiss();
       return;
@@ -1749,11 +2261,11 @@
     overlay.hidden = false;
     overlay.removeAttribute('hidden');
 
-    /* First time: no PIN stored — show setup */
     if (!hasStoredPin()) {
-      subText.textContent = 'Create your PIN to get started';
-      setupDiv.hidden = false;
-      unlockDiv.hidden = true;
+      if (subText) subText.textContent = 'Create your PIN to get started';
+      if (setupDiv) setupDiv.hidden = false;
+      if (unlockDiv) unlockDiv.hidden = true;
+      if (recoveryDiv) recoveryDiv.hidden = true;
 
       function doSetup() {
         const a = normalizePin(pinNew.value);
@@ -1774,38 +2286,91 @@
           return;
         }
         showSetupError('');
-        setStoredPin(a);
-        dismiss();
+        persistNewPin(a).then(() => dismiss(), () => {
+          showSetupError('Could not save PIN — storage blocked?');
+        });
       }
 
       setupSubmit.addEventListener('click', doSetup);
       pinConfirm.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); doSetup(); }
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          doSetup();
+        }
       });
       return;
     }
 
-    /* Returning user: unlock */
-    subText.textContent = 'Enter your PIN to continue';
-    setupDiv.hidden = true;
-    unlockDiv.hidden = false;
+    if (subText) subText.textContent = 'Enter your PIN to continue';
+    showUnlockUi();
 
     function doUnlock() {
       const entered = normalizePin(pinInput.value);
-      const stored = getStoredPin();
-      if (entered === stored) {
-        showUnlockError('');
-        dismiss();
-      } else {
-        showUnlockError('Incorrect PIN. Try again.');
-        pinInput.select();
-      }
+      verifyPinAsync(entered).then((ok) => {
+        if (ok) {
+          showUnlockError('');
+          dismiss();
+        } else {
+          showUnlockError('Incorrect PIN. Try again.');
+          if (pinInput) pinInput.select();
+        }
+      });
     }
 
     pinSubmit.addEventListener('click', doUnlock);
     pinInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') { e.preventDefault(); doUnlock(); }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        doUnlock();
+      }
     });
+
+    if (pinForgotBtn) {
+      pinForgotBtn.addEventListener('click', () => {
+        if (!isPhoneRecoveryConfigured()) {
+          showUnlockError('Add a recovery phone in Settings first (⚙️).');
+          return;
+        }
+        showRecoveryUi();
+      });
+    }
+
+    if (recBack) {
+      recBack.addEventListener('click', () => {
+        showUnlockUi();
+        if (pinInput) pinInput.focus();
+      });
+    }
+
+    if (recSubmit) {
+      recSubmit.addEventListener('click', () => {
+        const ph = normalizePhoneDigits(recPhone ? recPhone.value : '');
+        const a = normalizePin(recNew ? recNew.value : '');
+        const b = normalizePin(recConfirm2 ? recConfirm2.value : '');
+        showRecoveryError('');
+        if (!isValidPhoneDigits(ph)) {
+          showRecoveryError('Enter a valid phone number.');
+          return;
+        }
+        if (a.length < 4 || !/^\d+$/.test(a)) {
+          showRecoveryError('New PIN must be 4–8 digits.');
+          return;
+        }
+        if (a !== b) {
+          showRecoveryError('New PINs do not match.');
+          return;
+        }
+        verifyPhoneDigitsAsync(ph).then((match) => {
+          if (!match) {
+            showRecoveryError('Phone number does not match.');
+            return;
+          }
+          persistNewPin(a).then(() => dismiss(), () => {
+            showRecoveryError('Could not save new PIN.');
+          });
+        });
+      });
+    }
   }
 
   /**
@@ -1815,7 +2380,7 @@
     if (!('serviceWorker' in navigator)) return;
     if (location.protocol === 'file:') return;
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js', { scope: './' }).catch(() => {});
+      navigator.serviceWorker.register('sw.js?v=3', { scope: './' }).catch(() => {});
     });
   }
 
